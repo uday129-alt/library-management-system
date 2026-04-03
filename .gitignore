@@ -1,0 +1,18 @@
+# ===== Backend =====
+backend/target/
+backend/*.log
+backend/.env
+
+# ===== Frontend =====
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.production
+
+# ===== General =====
+.DS_Store
+Thumbs.db
+*.class
+*.iml
+.idea/
+*.log
