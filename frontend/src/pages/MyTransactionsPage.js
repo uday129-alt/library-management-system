@@ -9,7 +9,8 @@ export default function MyTransactionsPage() {
   const [returning, setReturning] = useState(null);
   const [message, setMessage] = useState(null);
 
-  useEffect(() => { fetchTransactions(); }, []);
+  useEffect(() => { fetchTransactions(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchTransactions = async () => {
     setLoading(true);

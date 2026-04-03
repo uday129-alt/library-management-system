@@ -1,199 +1,128 @@
-import React, { useState, useEffect } from 'react';
-import { getAllBooks, addBook, updateBook, deleteBook } from '../api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { getAllBooks, searchBooks, issueBook } from '../api';
+import { useAuth } from '../context/AuthContext';
 
-const EMPTY_FORM = {
-  title: '', author: '', category: '', isbn: '',
-  totalCopies: '', publishedYear: '', description: ''
-};
-
-export default function AdminBooksPage() {
+export default function BooksPage() {
+  const { user } = useAuth();
   const [books, setBooks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editBook, setEditBook] = useState(null); // null = add mode
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [issuing, setIssuing] = useState(null);
+  const [message, setMessage] = useState(null); // { type: 'success'|'error', text }
 
-  useEffect(() => { fetchBooks(); }, []);
-
-  const fetchBooks = async () => {
+  const fetchBooks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getAllBooks();
+      const res = searchQuery
+        ? await searchBooks(searchQuery)
+        : await getAllBooks();
       setBooks(res.data);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery]);
 
-  const openAdd = () => {
-    setEditBook(null);
-    setForm(EMPTY_FORM);
-    setError('');
-    setShowModal(true);
-  };
+  useEffect(() => {
+    const timer = setTimeout(fetchBooks, 400);
+    return () => clearTimeout(timer);
+  }, [fetchBooks]);
 
-  const openEdit = (book) => {
-    setEditBook(book);
-    setForm({
-      title: book.title, author: book.author, category: book.category,
-      isbn: book.isbn, totalCopies: book.totalCopies,
-      publishedYear: book.publishedYear || '', description: book.description || ''
-    });
-    setError('');
-    setShowModal(true);
-  };
-
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError('');
+  const handleIssue = async (bookId) => {
+    setIssuing(bookId);
+    setMessage(null);
     try {
-      const payload = { ...form, totalCopies: parseInt(form.totalCopies), publishedYear: form.publishedYear ? parseInt(form.publishedYear) : null };
-      if (editBook) {
-        await updateBook(editBook.id, payload);
-      } else {
-        await addBook(payload);
-      }
-      setShowModal(false);
+      await issueBook(user.id, bookId);
+      setMessage({ type: 'success', text: '✅ Book issued successfully! Due in 14 days.' });
       fetchBooks();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save book.');
+      setMessage({ type: 'error', text: err.response?.data?.message || 'Could not issue book.' });
     } finally {
-      setSaving(false);
+      setIssuing(null);
     }
   };
 
-  const handleDelete = async (id, title) => {
-    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return;
-    try {
-      await deleteBook(id);
-      fetchBooks();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Cannot delete this book.');
-    }
-  };
-
-  const filtered = books.filter(b =>
-    b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // eslint-disable-next-line no-unused-vars
+  const categories = [...new Set(books.map(b => b.category))].sort();
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Manage Books</h1>
-          <p className="page-subtitle">{books.length} total books in catalog</p>
+          <h1 className="page-title">Browse Library</h1>
+          <p className="page-subtitle">{books.length} book{books.length !== 1 ? 's' : ''} found</p>
         </div>
-        <button className="btn btn-primary" onClick={openAdd}>+ Add Book</button>
       </div>
 
+      {/* Search */}
       <div className="search-bar">
         <div className="search-input-wrap">
           <span className="search-icon">🔍</span>
-          <input className="form-control" placeholder="Filter books…"
-            value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <input
+            className="form-control"
+            placeholder="Search by title, author, or category…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
         </div>
+        {searchQuery && (
+          <button className="btn btn-secondary btn-sm" onClick={() => setSearchQuery('')}>
+            Clear
+          </button>
+        )}
       </div>
 
-      {loading ? <div className="loading">Loading…</div> : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Title</th><th>Author</th><th>Category</th>
-                <th>ISBN</th><th>Total</th><th>Available</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(book => (
-                <tr key={book.id}>
-                  <td><strong>{book.title}</strong></td>
-                  <td>{book.author}</td>
-                  <td><span className="badge badge-amber">{book.category}</span></td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{book.isbn}</td>
-                  <td>{book.totalCopies}</td>
-                  <td>
-                    <span className={book.availableCopies > 0 ? 'available-yes' : 'available-no'}>
-                      {book.availableCopies}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="btn btn-secondary btn-sm" onClick={() => openEdit(book)}>✏️ Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(book.id, book.title)}>🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Message Banner */}
+      {message && (
+        <div style={{
+          background: message.type === 'success' ? 'rgba(61,214,140,0.1)' : 'rgba(240,100,100,0.1)',
+          border: `1px solid ${message.type === 'success' ? 'rgba(61,214,140,0.3)' : 'rgba(240,100,100,0.3)'}`,
+          color: message.type === 'success' ? 'var(--green)' : 'var(--red)',
+          padding: '0.85rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.875rem'
+        }}>
+          {message.text}
         </div>
       )}
 
-      {/* Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">{editBook ? 'Edit Book' : 'Add New Book'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Title *</label>
-                  <input className="form-control" name="title" value={form.title} onChange={handleChange} required />
-                </div>
-                <div className="form-group">
-                  <label>Author *</label>
-                  <input className="form-control" name="author" value={form.author} onChange={handleChange} required />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Category *</label>
-                  <input className="form-control" name="category" value={form.category} onChange={handleChange} required placeholder="e.g. Fiction, Technology" />
-                </div>
-                <div className="form-group">
-                  <label>ISBN *</label>
-                  <input className="form-control" name="isbn" value={form.isbn} onChange={handleChange} required />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Total Copies *</label>
-                  <input className="form-control" type="number" name="totalCopies" value={form.totalCopies} onChange={handleChange} required min="1" />
-                </div>
-                <div className="form-group">
-                  <label>Published Year</label>
-                  <input className="form-control" type="number" name="publishedYear" value={form.publishedYear} onChange={handleChange} placeholder="e.g. 2023" />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Description</label>
-                <textarea className="form-control" name="description" value={form.description} onChange={handleChange} rows={3} style={{ resize: 'vertical' }} />
-              </div>
-              {error && (
-                <div style={{ color: 'var(--red)', fontSize: '0.85rem', marginBottom: '0.75rem',
-                  background: 'rgba(240,100,100,0.1)', padding: '0.6rem', borderRadius: '6px' }}>
-                  {error}
-                </div>
+      {loading ? (
+        <div className="loading">Loading books…</div>
+      ) : books.length === 0 ? (
+        <div className="empty-state">
+          <div className="icon">📭</div>
+          <p>No books found{searchQuery ? ` for "${searchQuery}"` : ''}.</p>
+        </div>
+      ) : (
+        <div className="card-grid">
+          {books.map(book => (
+            <div key={book.id} className="book-card">
+              <span className="book-category">{book.category}</span>
+              <h3 className="book-title">{book.title}</h3>
+              <p className="book-author">by {book.author}</p>
+              {book.publishedYear && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{book.publishedYear}</p>
               )}
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? 'Saving…' : editBook ? 'Update Book' : 'Add Book'}
+              {book.description && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem', lineHeight: 1.5 }}>
+                  {book.description.length > 100 ? book.description.slice(0, 100) + '…' : book.description}
+                </p>
+              )}
+              <div className="book-copies" style={{ marginTop: '0.75rem' }}>
+                {book.availableCopies > 0
+                  ? <span className="available-yes">✓ {book.availableCopies} of {book.totalCopies} available</span>
+                  : <span className="available-no">✗ All copies borrowed</span>}
+              </div>
+              <div className="book-actions">
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={book.availableCopies === 0 || issuing === book.id}
+                  onClick={() => handleIssue(book.id)}
+                >
+                  {issuing === book.id ? 'Issuing…' : '📤 Borrow'}
                 </button>
               </div>
-            </form>
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
